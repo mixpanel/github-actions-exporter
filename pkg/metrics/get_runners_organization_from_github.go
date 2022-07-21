@@ -31,6 +31,8 @@ func getRunnersOrganizationFromGithub() {
 				if err != nil {
 					log.Printf("ListOrganizationRunners error for %s: %s", orga, err.Error())
 				} else {
+					runnersGauge.Reset()
+
 					for _, runner := range resp.Runners {
 						if runner.GetStatus() == "online" {
 							runnersOrganizationGauge.WithLabelValues(orga, *runner.OS, *runner.Name, strconv.FormatInt(runner.GetID(), 10), strconv.FormatBool(runner.GetBusy())).Set(1)

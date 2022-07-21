@@ -30,6 +30,8 @@ func getRunnersFromGithub() {
 			if err != nil {
 				log.Printf("ListRunners error for %s: %s", repo, err.Error())
 			} else {
+				runnersGauge.Reset()
+
 				for _, runner := range resp.Runners {
 					if runner.GetStatus() == "online" {
 						runnersGauge.WithLabelValues(repo, *runner.OS, *runner.Name, strconv.FormatInt(runner.GetID(), 10), strconv.FormatBool(runner.GetBusy())).Set(1)
