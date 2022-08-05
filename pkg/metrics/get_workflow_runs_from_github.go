@@ -29,7 +29,16 @@ func getFieldValue(repo string, run github.WorkflowRun, field string) string {
 	case "workflow_id":
 		return strconv.FormatInt(*run.WorkflowID, 10)
 	case "workflow":
-		return *workflows[repo][*run.WorkflowID].Name
+		if workflows != nil && workflows[repo] != nil {
+			w, exist := workflows[repo][*run.WorkflowID]
+			if !exist {
+				log.Printf("Couldn't fetch repo '%s', workflow '%d' from workflow cache.", repo, *run.WorkflowID)
+				return "unknown"
+			}
+
+			return *w.Name
+		}
+		return ""
 	case "event":
 		return *run.Event
 	case "status":
