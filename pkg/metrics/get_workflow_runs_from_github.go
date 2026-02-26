@@ -142,5 +142,7 @@ func getWorkflowRunsFromGithub() {
 		}
 
 		time.Sleep(time.Duration(config.Github.Refresh) * time.Second)
+		workflowRunStatusGauge.Reset()
+		workflowRunDurationGauge.Reset()
 	}
 }
