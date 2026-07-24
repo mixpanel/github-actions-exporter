@@ -17,6 +17,14 @@ var (
 	}
 	Metrics struct {
 		FetchWorkflowRunUsage bool
+		// FetchWorkflowStepMetrics, when true, fetches jobs for each completed
+		// run and emits per-step durations. Costs one extra API call per run,
+		// so scope it with WorkflowStepMetricsWorkflows.
+		FetchWorkflowStepMetrics bool
+		// WorkflowStepMetricsWorkflows optionally restricts step metrics to a
+		// comma-separated allowlist of workflow names. Empty means all workflows
+		// (high API cost + cardinality on a busy repo).
+		WorkflowStepMetricsWorkflows string
 	}
 	Port           int
 	Debug          bool
@@ -126,6 +134,20 @@ func InitConfiguration() []cli.Flag {
 			Value:       100 * 1024 * 1024,
 			Usage:       "Size of Github HTTP cache in bytes",
 			Destination: &Github.CacheSizeBytes,
+		},
+		&cli.BoolFlag{
+			Name:        "fetch_workflow_step_metrics",
+			EnvVars:     []string{"FETCH_WORKFLOW_STEP_METRICS"},
+			Usage:       "When true, performs an API call per completed run to emit per-step durations (github_workflow_step_duration_seconds)",
+			Value:       false,
+			Destination: &Metrics.FetchWorkflowStepMetrics,
+		},
+		&cli.StringFlag{
+			Name:        "workflow_step_metrics_workflows",
+			EnvVars:     []string{"WORKFLOW_STEP_METRICS_WORKFLOWS"},
+			Usage:       "Comma-separated allowlist of workflow names to emit step metrics for. Empty means all workflows.",
+			Value:       "",
+			Destination: &Metrics.WorkflowStepMetricsWorkflows,
 		},
 	}
 }

@@ -103,6 +103,73 @@ func getRunUsage(owner string, repo string, runId int64) *github.WorkflowRunUsag
 	}
 }
 
+// getWorkflowJobs - list all jobs (with their steps) for a workflow run
+func getWorkflowJobs(owner string, repo string, runId int64) []*github.WorkflowJob {
+	opt := &github.ListWorkflowJobsOptions{
+		ListOptions: github.ListOptions{PerPage: 100},
+	}
+
+	var jobs []*github.WorkflowJob
+	for {
+		resp, rr, err := client.Actions.ListWorkflowJobs(context.Background(), owner, repo, runId, opt)
+		if rl_err, ok := err.(*github.RateLimitError); ok {
+			log.Printf("ListWorkflowJobs ratelimited. Pausing until %s", rl_err.Rate.Reset.Time.String())
+			time.Sleep(time.Until(rl_err.Rate.Reset.Time))
+			continue
+		} else if err != nil {
+			log.Printf("ListWorkflowJobs error for repo %s/%s and runId %d: %s", owner, repo, runId, err.Error())
+			return jobs
+		}
+
+		jobs = append(jobs, resp.Jobs...)
+		if rr.NextPage == 0 {
+			break
+		}
+		opt.Page = rr.NextPage
+	}
+
+	return jobs
+}
+
+// stepMetricsWorkflowAllowed reports whether step metrics should be emitted for
+// the given workflow name, honoring the optional allowlist.
+func stepMetricsWorkflowAllowed(workflow string) bool {
+	allow := strings.TrimSpace(config.Metrics.WorkflowStepMetricsWorkflows)
+	if allow == "" {
+		return true
+	}
+	for _, w := range strings.Split(allow, ",") {
+		if strings.TrimSpace(w) == workflow {
+			return true
+		}
+	}
+	return false
+}
+
+// emitWorkflowStepMetrics fetches the jobs of a completed run and sets a
+// per-step duration gauge for every step with both start and completion times.
+func emitWorkflowStepMetrics(owner string, repo string, run *github.WorkflowRun) {
+	workflow := getFieldValue(repo, *run, "workflow")
+	if !stepMetricsWorkflowAllowed(workflow) {
+		return
+	}
+	runId := strconv.FormatInt(run.GetID(), 10)
+	for _, job := range getWorkflowJobs(owner, repo, run.GetID()) {
+		for _, step := range job.Steps {
+			if step.StartedAt == nil || step.CompletedAt == nil {
+				continue
+			}
+			seconds := step.CompletedAt.Time.Sub(step.StartedAt.Time).Seconds()
+			if seconds < 0 {
+				continue
+			}
+			workflowStepDurationGauge.WithLabelValues(
+				repo, workflow, job.GetName(), step.GetName(), step.GetConclusion(), runId,
+			).Set(seconds)
+		}
+	}
+}
+
 // getWorkflowRunsFromGithub - return informations and status about a workflow
 func getWorkflowRunsFromGithub() {
 	for {
@@ -138,11 +205,16 @@ func getWorkflowRunsFromGithub() {
 				} else {
 					workflowRunDurationGauge.WithLabelValues(fields...).Set(float64(run_usage.GetRunDurationMS()))
 				}
+
+				if config.Metrics.FetchWorkflowStepMetrics && run.GetStatus() == "completed" {
+					emitWorkflowStepMetrics(r[0], r[1], run)
+				}
 			}
 		}
 
 		time.Sleep(time.Duration(config.Github.Refresh) * time.Second)
 		workflowRunStatusGauge.Reset()
 		workflowRunDurationGauge.Reset()
+		workflowStepDurationGauge.Reset()
 	}
 }
