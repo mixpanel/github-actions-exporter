@@ -149,7 +149,14 @@ func stepMetricsWorkflowAllowed(workflow string) bool {
 // emitWorkflowStepMetrics fetches the jobs of a completed run and sets a
 // per-step duration gauge for every step with both start and completion times.
 func emitWorkflowStepMetrics(owner string, repo string, run *github.WorkflowRun) {
-	workflow := getFieldValue(repo, *run, "workflow")
+	// The workflow cache is keyed by the full "owner/name" (see periodicGithubFetcher),
+	// and the run-gauge path (getRelevantFields) looks it up that way. Use the same key
+	// here, otherwise getFieldValue misses the cache on every completed run: it logs
+	// "Couldn't fetch repo '<name>' from workflow cache." and falls back to "unknown",
+	// which also breaks the WorkflowStepMetricsWorkflows allowlist (nothing matches
+	// "unknown", so scoping the feature would emit zero step metrics).
+	fullRepo := owner + "/" + repo
+	workflow := getFieldValue(fullRepo, *run, "workflow")
 	if !stepMetricsWorkflowAllowed(workflow) {
 		return
 	}
@@ -163,8 +170,9 @@ func emitWorkflowStepMetrics(owner string, repo string, run *github.WorkflowRun)
 			if seconds < 0 {
 				continue
 			}
+			// Use fullRepo for the repo label too, to match github_workflow_run_* gauges.
 			workflowStepDurationGauge.WithLabelValues(
-				repo, workflow, job.GetName(), step.GetName(), step.GetConclusion(), runId,
+				fullRepo, workflow, job.GetName(), step.GetName(), step.GetConclusion(), runId,
 			).Set(seconds)
 		}
 	}
